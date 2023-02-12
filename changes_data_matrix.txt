@@ -1,0 +1,224 @@
+CREATE OR REPLACE PACKAGE BODY FAMILY."UTIL_DATAMATRIX" AS
+--------------------------------------------------------------------------------
+FUNCTION db_searchfor1021(str varchar2,prfx1  varchar2,mindgt number,prfx2 varchar2,sep varchar2) RETURN number IS
+
+ret_val1 number :=0;
+ret_val2 number :=0;
+ret_val number :=0;
+i number ;
+tmpstr varchar2(500);
+seppos number;
+is_digit boolean := true;
+BEGIN
+  --searchfor(remn3,'10',6,'21')
+  --note that prfx1 is not used ,it can be 10 or 21
+  --0106285094000349 21000000 10 7645841725043010F2103555
+  --0106285094000349 21000000 10 7645841725043010F2103555
+    tmpstr := substr(str,3);
+    ret_val1 := 0;
+    ret_val2 := 0;
+
+    i := mindgt;
+    seppos := instr(tmpstr,sep);
+    if seppos > 0 and substr(tmpstr,seppos+length(sep),2)=prfx2 then
+         ret_val1 :=seppos+length(sep);
+         --message(ret_val);pause;
+    else
+    loop
+       exit when i > length(tmpstr)-mindgt  ;
+       if substr(tmpstr,i,2)=prfx2 then
+             --may be i found the right place
+             --if not substr(tmpstr,i,1) between '0' and '9' then is_digit := false ; end if;
+             if ret_val1 =0 then 
+                ret_val1 :=  i; 
+             else 
+                if ret_val2 =0 then
+                   ret_val2 :=  i;
+                end if;   
+             end if;   
+             --ret_val := i;
+             --exit;
+       end if;
+     null;
+     i := i + 1;
+    end loop;
+    end if;
+    --prfx1,prfx2
+    --message(ret_val);pause;
+    if ret_val2 >0 and prfx1 ='21' and is_digit  then 
+        ret_val := ret_val2 ;
+    else    
+       ret_val := ret_val1 ;
+    end if;
+    return ret_val;  
+END db_searchfor1021;
+
+--=====================================================================================
+FUNCTION db_SEARCHFOR17(str varchar2,prfx  varchar2,mindgt number,remprf varchar2) RETURN number IS
+--prfx should be 17
+ret_val number;
+i       number ;
+tmpstr  varchar2(500);
+dt      date;
+yy      varchar2(2);
+mm      varchar2(2);
+dd      varchar2(2);
+nxtprf  varchar2(2);
+BEGIN
+
+  --db_searchfor17(remn2,'17',6,'21');
+  --21000000 10 764584 17250430 10 F210355
+
+  tmpstr := substr(str,3);
+  --message('look for 17');pause;
+  --message(tmpstr);pause;
+    ret_val := 0;
+
+    i := mindgt-2;
+    nxtprf :='';
+
+    loop
+       --exit when i > length(tmpstr)-mindgt  ;
+       exit when i > length(tmpstr)  ;
+       --you found 17 ,but check after it 6 digit valid yymmdd
+       if substr(tmpstr,i,2)=prfx then
+             --message('found 17');pause;
+          yy :=substr(tmpstr,i+2,2)  ; mm :=substr(tmpstr,i+4,2)  ; dd  :=substr(tmpstr,i+6,2);
+          if yy between '00' and '99' and mm between '01' and '12' and dd  between '00' and '31'  then
+          --if yy between '00' and '99' and mm between '01' and '12' and dd  between '01' and '31'  then
+              if  i+7=length(tmpstr) then
+                 ret_val := i;
+                 exit;
+              end if;
+
+              nxtprf := substr(tmpstr,i+8,2);
+              --message(nxtprf);pause;
+              --if nxtprf='10' or nxtprf='21' then
+              if nxtprf = remprf then
+                   --message('good');pause;
+                   ret_val := i;
+                   exit;
+              end if;
+
+             end if;
+       end if;
+     null;
+     i := i + 1;
+    end loop;
+    --message(ret_val);pause;
+    return ret_val;
+END db_SEARCHFOR17;
+
+
+FUNCTION db_splitdatamatrix(dm varchar2,separator  varchar2) RETURN varchar2 IS
+gtin   varchar2(500);
+mark2  varchar2(2);
+remn2  varchar2(500);
+remn3  varchar2(500);
+expiry varchar2(500);
+expiry_temp varchar2(500);
+sn     varchar2(500);
+batch  varchar2(500);
+prfx1  varchar2(2);
+prfx2  varchar2(2);
+pos    number;
+flg    boolean;
+n      number;
+ret_val varchar2(500);
+prodlength number :=0;    
+BEGIN
+
+ gtin := substr(dm,3,14);
+ remn2 := substr(dm,17);
+ mark2 := substr(remn2,1,2);
+
+ --21 is the sn      (var)
+ --10 is the batch   (var)
+ --17 is expiry      (fixed 6 yymmdd)
+ --11 is production
+ 
+
+ --we can try to make all of them with 01 then 17 then any (21 or 10)
+ --batch
+ pos := 0;
+ flg := false;
+
+
+if mark2 = '11' then
+    --production 
+   remn2 := substr(dm,17+8);
+   mark2 := substr(remn2,1,2);
+   --pos := UTIL_DATAMATRIX.db_searchfor17(remn2,'17',6,'21');
+   -- flg :=true;
+   prodlength := 8; 
+ end if;
+ 
+ 
+ if mark2 = '10' then
+    null;
+    --remain 17 ,21  or 21,17
+    --and check 21 in the remaining
+       pos := UTIL_DATAMATRIX.db_searchfor17(remn2,'17',6,'21');
+    flg :=true;
+ end if;
+ --sn
+ if mark2 = '21' then
+    null;
+    --remain 17 ,10  or 10,17
+    --and check 10 in the remaining
+    pos := UTIL_DATAMATRIX.db_searchfor17(remn2,'17',6,'10');
+    flg := true;
+end if;
+if flg and pos <> 0 then
+   --remn2 :=  substr(remn2,pos+2,8) ||  replace(remn2,substr(remn2,pos+2,8),'');
+   remn2 :=  substr(remn2,pos+2,8)  ||substr(remn2,1,pos+1)||substr(remn2,pos+10);
+   --DBMS_OUTPUT.put(remn2);
+   mark2 := '17';
+end if;
+
+if mark2 = '17' then
+    --six digit for expiry
+    expiry_temp := substr(remn2,3,6) ;
+    expiry:='20'||substr(expiry_temp,1,2)||'-'||substr(expiry_temp,3,2)||'-'||substr(expiry_temp,5,2);
+    remn3  := substr(remn2,9);
+
+    if substr(remn3,1,2)='10' then
+
+        --if there is separator  after 10 and before 21 (space or any  other ) ,then great
+        --search for 21 after 4 digits
+        pos := UTIL_DATAMATRIX.db_searchfor1021(remn3,'10',4,'21',chr(separator));
+
+        batch  :=substr(remn3,3,pos-1);
+        sn     :=substr(remn3,pos+4);
+        --message('batch '||batch);pause;
+        --message('sn    '||sn);pause;
+    end if;
+    if substr(remn3,1,2)='21' then
+
+      --if there is separator  after 21 and before 10 (space or any  other ) ,then great
+
+        --21 then 10
+        --minimum 21 is six digits or more
+        --search for 10 after 4 digits
+        pos   := UTIL_DATAMATRIX.db_searchfor1021(remn3,'21',4,'10',chr(separator));
+        sn    := substr(remn3,3,pos-1);
+        batch := substr(remn3,pos+4);
+        --message('batch '||batch);pause;
+        --message('sn    '||sn);pause;
+    end if;
+ end if;
+ if length(dm) =  2+length(gtin)+2+length(expiry_temp)+2+length(batch)+2+length(sn)+prodlength then
+     --modified by adel araby to replace day '00' with day '01' by force,may be will face problems later withs supplier data and bacth storage
+	 if substr(expiry,5,2)='00' then
+	    expiry := substr(expiry,1,4)||'01';
+	 end if;
+      ret_val  :='<GTIN>'||gtin||'</GTIN>'||'<SN>'||sn||'</SN>'||'<BN>'||batch||'</BN>' ||'<XD>'||expiry||'</XD>' ;
+       --message ('okkkkkkkkkkkkkkk');pause;
+ else
+       --message ('there is a problem');pause;
+       ret_val :='' ;
+ end if;
+ return ret_val;
+END db_splitdatamatrix;
+
+
